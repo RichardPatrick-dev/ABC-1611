@@ -1,0 +1,59 @@
+- name: Check if Terraform is already installed
+  stat:
+    path: "{{ install_dir }}/terraform"
+  register: terraform_installed
+
+- name: Create temporary directory for download
+  tempfile:
+    state: directory
+    suffix: terraform
+  register: temp_dir
+  when: not terraform_installed.stat.exists
+
+- name: Download Terraform
+  when: not terraform_installed.stat.exists
+  get_url:
+    url: "{{ terraform_url }}"
+    dest: "{{ temp_dir.path }}/terraform.zip"
+    mode: '0755'
+
+- name: Install unzip if needed
+  when: not terraform_installed.stat.exists
+  package:
+    name: unzip
+    state: present
+
+- name: Extract Terraform
+  when: not terraform_installed.stat.exists
+  unarchive:
+    src: "{{ temp_dir.path }}/terraform.zip"
+    dest: "{{ temp_dir.path }}"
+    remote_src: yes
+    mode: '0755'
+
+- name: Install Terraform binary
+  when: not terraform_installed.stat.exists
+  copy:
+    src: "{{ temp_dir.path }}/terraform"
+    dest: "{{ install_dir }}/terraform"
+    remote_src: yes
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Verify Terraform installation
+  command: "terraform version"
+  register: terraform_version_check
+  changed_when: false
+  failed_when: false
+
+- name: Display Terraform version
+  debug:
+    msg: "{{ terraform_version_check.stdout }}"
+
+- name: Clean up temporary directory
+  when: temp_dir.path is defined
+  file:
+    path: "{{ temp_dir.path }}"
+    state: absent
+
