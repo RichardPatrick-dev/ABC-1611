@@ -1,78 +1,86 @@
 - name: Install Git on Azure VMs
   hosts: azure_vms
   become: true
-  tasks:
 
+  vars:
+    terraform_version: "1.7.5"  # Change this to your desired version
+    install_dir: "/usr/local/bin"
+    terraform_url: "https://releases.hashicorp.com/terraform/{{ terraform_version }}/terraform_{{ terraform_version }}_linux_amd64.zip"
+
+  tasks:
+  
+  
     - name: Install Git
       apt:
         name: git
         state: present
+
+    - name: Check if Terraform is already installed
+      stat:
+        path: "{{ install_dir }}/terraform"
+      register: terraform_installed
+
+    - name: Create temporary directory for download
+      tempfile:
+        state: directory
+        suffix: terraform
+      register: temp_dir
+
+    - name: Download Terraform
+      when: not terraform_installed.stat.exists
+      get_url:
+        url: "{{ terraform_url }}"
+        dest: "{{ temp_dir.path }}/terraform.zip"
+        mode: '0755'
+
+    - name: Install unzip if needed
+      when: not terraform_installed.stat.exists
+      package:
+        name: unzip
+        state: present
+
+    - name: Extract Terraform
+      when: not terraform_installed.stat.exists
+      unarchive:
+        src: "{{ temp_dir.path }}/terraform.zip"
+        dest: "{{ temp_dir.path }}"
+        remote_src: yes
+        mode: '0755'
+
+    - name: Install Terraform binary
+      when: not terraform_installed.stat.exists
+      copy:
+        src: "{{ temp_dir.path }}/terraform"
+        dest: "{{ install_dir }}/terraform"
+        remote_src: yes
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Verify Terraform installation
+      command: "terraform version"
+      register: terraform_version_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display Terraform version
+      debug:
+        msg: "{{ terraform_version_check.stdout }}"
+
+    - name: Clean up temporary directory
+      file:
+        path: "{{ temp_dir.path }}"
+        state: absent
+        
+        
     - name: Clone Git repository
       git:
         repo: https://github.com/RichardPatrick-dev/devops.git
         dest: /home/azureuser/terraform-scripts
         clone: yes
         update: no
+        
     - name: Clean up files (example)
       file:
         path: /home/azureuser/terraform-scripts
         state: absent
-
-
-    - name: Install required packages (Debian/Ubuntu)
-      apt:
-        name:
-          - gnupg
-          - software-properties-common
-          - curl
-        state: present
-      when: ansible_facts['os_family'] == "Debian"
-
-    - name: Add HashiCorp GPG key (Debian/Ubuntu)
-      apt_key:
-        url: https://apt.releases.hashicorp.com/gpg
-        state: present
-      when: ansible_facts['os_family'] == "Debian"
-
-    - name: Add HashiCorp repo (Debian/Ubuntu)
-      apt_repository:
-        repo: "deb [arch=amd64] https://apt.releases.hashicorp.com {{ ansible_distribution | lower }} {{ ansible_distribution_release | lower }} main"
-        state: present
-      when: ansible_facts['os_family'] == "Debian"
-
-    - name: Update apt cache
-      apt:
-        update_cache: yes
-      when: ansible_facts['os_family'] == "Debian"
-
-    - name: Install Terraform (Debian/Ubuntu)
-      apt:
-        name: terraform
-        state: present
-      when: ansible_facts['os_family'] == "Debian"
-
-    - name: Install required packages (RHEL/CentOS/Amazon Linux)
-      yum:
-        name: yum-utils
-        state: present
-      when: ansible_facts['os_family'] == "RedHat"
-
-    - name: Add HashiCorp repo (RHEL/CentOS/Amazon Linux)
-      get_url:
-        url: https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo
-        dest: /etc/yum.repos.d/hashicorp.repo
-      when: ansible_facts['os_family'] == "RedHat"
-
-    - name: Install Terraform (RHEL/CentOS/Amazon Linux)
-      yum:
-        name: terraform
-        state: present
-      when: ansible_facts['os_family'] == "RedHat"
-
-    - name: Verify Terraform installation
-      command: terraform -version
-      register: terraform_version
-
-    - name: Show Terraform version
-      debug:
-        var: terraform_version.stdout
